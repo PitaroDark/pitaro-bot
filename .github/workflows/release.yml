@@ -14,12 +14,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Get version from package.json
+      - name: Get metadata from package.json
         id: pkg
-        run: echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
+        run: |
+          echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
+          echo "description=$(node -p "require('./package.json').description")" >> $GITHUB_OUTPUT
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           name: v${{ steps.pkg.outputs.version }}
+          body: ${{ steps.pkg.outputs.description }}
           generate_release_notes: true

@@ -1,70 +1,78 @@
+import "reflect-metadata";
 import { dirname, importx } from "@discordx/importer";
-import { IntentsBitField, type Interaction, type Message } from "discord.js";
-import { Client } from "discordx";
+import { IntentsBitField, MessageFlags } from "discord.js";
+import { DefaultExtractors } from "@discord-player/extractor";
+import { YoutubeExtractor } from "discord-player-youtubei";
+import { Player } from "discord-player";
+import { Client, DIService, tsyringeDependencyRegistryEngine } from "discordx";
+import { container } from "./shared/Container";
+import { Logger } from "./shared/Logger";
+import { RequestContext } from "./shared/RequestContext";
+import { PlayerEvents } from "./discord/infrastructure/in/events/PlayerEvents";
 
-export const bot = new Client({
-  // To use only guild command
-  // botGuilds: [(client) => client.guilds.cache.map((guild) => guild.id)],
+const logger = new Logger("Bootstrap");
+const discordLogger = new Logger("DiscordClient");
 
-  // Discord intents
-  intents: [
-    IntentsBitField.Flags.Guilds,
-    IntentsBitField.Flags.GuildMembers,
-    IntentsBitField.Flags.GuildMessages,
-    IntentsBitField.Flags.GuildMessageReactions,
-    IntentsBitField.Flags.GuildVoiceStates,
-  ],
+(async () => {
+  DIService.engine = tsyringeDependencyRegistryEngine.setInjector(container);
 
-  // Debug logs are disabled in silent mode
-  silent: false,
+  const guildId = process.env.DEV_GUILD_ID;
 
-  // Configuration for @SimpleCommand
-  simpleCommand: {
-    prefix: "!",
-  },
-});
+  const bot = new Client({
+    intents: [
+      IntentsBitField.Flags.Guilds,
+      IntentsBitField.Flags.GuildMessages,
+      IntentsBitField.Flags.GuildVoiceStates,
+    ],
+    // En desarrollo usa un servidor específico para registros instantáneos.
+    // En producción omite botGuilds para comandos globales.
+    ...(guildId ? { botGuilds: [guildId] } : {}),
+    silent: false,
+    logger: {
+      log: (...args) => String(args[0]).trim() && discordLogger.log(args[0], ...args.slice(1)),
+      info: (...args) => String(args[0]).trim() && discordLogger.info(args[0], ...args.slice(1)),
+      warn: (...args) => String(args[0]).trim() && discordLogger.warn(args[0], ...args.slice(1)),
+      error: (...args) => String(args[0]).trim() && discordLogger.error(args[0], ...args.slice(1)),
+    },
+  });
 
-bot.once("ready", () => {
-  // Make sure all guilds are cached
-  // await bot.guilds.fetch();
+  const player = new Player(bot);
+  await player.extractors.register(YoutubeExtractor, {});
+  await player.extractors.loadMulti(DefaultExtractors);
+  container.registerInstance("MusicPlayer", player);
+  container.resolve(PlayerEvents);
 
-  // Synchronize applications commands with Discord
-  void bot.initApplicationCommands();
+  bot.once("clientReady", async () => {
+    await bot.initApplicationCommands();
+    logger.info(`Sistema operando. Conectado como: ${bot.user?.tag}`);
+  });
 
-  // To clear all guild commands, uncomment this line,
-  // This is useful when moving from guild commands to global commands
-  // It must only be executed once
-  //
-  //  await bot.clearApplicationCommands(
-  //    ...bot.guilds.cache.map((g) => g.id)
-  //  );
+  bot.on("interactionCreate", async (interaction) => {
+    if (!interaction.guildId) {
+      await bot.executeInteraction(interaction);
+    } else {
+      await RequestContext.run(
+        { guildId: interaction.guildId, userId: interaction.user.id },
+        () => bot.executeInteraction(interaction)
+      );
+    }
 
-  console.log("Bot started");
-});
+    if (interaction.isCommand() && !interaction.replied && !interaction.deferred) {
+      await interaction.reply({
+        content: "Este comando no está disponible o ya no existe.",
+        flags: MessageFlags.Ephemeral,
+      });
+    }
+  });
 
-bot.on("interactionCreate", (interaction: Interaction) => {
-  bot.executeInteraction(interaction);
-});
+  try {
+    await importx(`${dirname(import.meta.url)}/discord/infrastructure/in/**/*.{ts,js}`);
 
-bot.on("messageCreate", (message: Message) => {
-  void bot.executeCommand(message);
-});
+    const token = process.env.BOT_TOKEN;
+    if (!token) throw new Error("BOT_TOKEN no definido en el archivo .env");
 
-async function run() {
-  // The following syntax should be used in the commonjs environment
-  //
-  // await importx(__dirname + "/{events,commands}/**/*.{ts,js}");
-
-  // The following syntax should be used in the ECMAScript environment
-  await importx(`${dirname(import.meta.url)}/{events,commands}/**/*.{ts,js}`);
-
-  // Let's start the bot
-  if (!process.env.BOT_TOKEN) {
-    throw Error("Could not find BOT_TOKEN in your environment");
+    await bot.login(token);
+  } catch (error) {
+    logger.error("Error fatal al iniciar el bot", error);
   }
-
-  // Log in with your bot token
-  await bot.login(process.env.BOT_TOKEN);
-}
-
-void run();
+})();

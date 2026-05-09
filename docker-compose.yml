@@ -1,7 +1,8 @@
-version: "3"
 services:
-  app:
+  pitaro-bot:
     build: .
-    command: node build/main.js
+    restart: unless-stopped
+    env_file: .env
     environment:
-      - BOT_TOKEN=${BOT_TOKEN}
+      NODE_ENV: production
+      LOG_LEVEL: info

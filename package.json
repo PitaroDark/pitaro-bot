@@ -1,6 +1,7 @@
 {
   "name": "pitaro-bot",
   "version": "1.0.0",
+  "description": "Self-hosted Discord music bot built with TypeScript. Streams from YouTube & SoundCloud with full queue controls. More features coming.",
   "private": true,
   "license": "MIT",
   "type": "module",

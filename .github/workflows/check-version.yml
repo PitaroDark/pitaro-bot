@@ -29,7 +29,7 @@ jobs:
           PR="${{ steps.pr.outputs.version }}"
           MAIN="${{ steps.main.outputs.version }}"
           if [ "$PR" = "$MAIN" ]; then
-            echo "❌ Version not bumped. Still at $MAIN — update package.json following semver (https://semver.org)"
+            echo "Version not bumped. Still at $MAIN — update package.json following semver (https://semver.org)"
             exit 1
           fi
-          echo "✅ Version bumped: $MAIN → $PR"
+          echo "Version bumped: $MAIN → $PR"
